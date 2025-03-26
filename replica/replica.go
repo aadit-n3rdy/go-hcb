@@ -126,6 +126,7 @@ func (r *Replica) startServer() {
 			panic("Failed to accept connection")
 		}
 
+		// handle the connection
 		go r.handleConnection(conn)
 
 	}
@@ -171,7 +172,8 @@ func (r *Replica) startMesh() bool {
 	for _, rep := range r.replicaList {
 
 		// continue to the next replica if connection has already been established
-		if rep.Conn != nil {
+		// and avoid duplicate connections by connecting to higher id replicas
+		if rep.Conn != nil || rep.Id <= r.id {
 			continue
 		}
 
