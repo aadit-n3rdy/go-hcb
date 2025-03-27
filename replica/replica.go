@@ -1,40 +1,14 @@
 package replica
 
 import (
-	"bufio"
 	"fmt"
-	"log"
 	"net"
+	"net/rpc"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/aadit-n3rdy/hotCrossBuns/ds"
 )
-
-type OtherReplica struct {
-	Id     int
-	Conn   net.Conn
-	IpAddr string
-	Port   string
-}
-
-type Replica struct {
-	id     int
-	ipAddr string
-	port   string
-
-	replicaList []*OtherReplica
-
-	isLeader bool
-	leaderID int
-
-	viewNumber int
-	lockedQC   ds.QuroumCertificate
-	prepareQC  ds.QuroumCertificate
-	branch     *ds.Branch
-}
 
 // initialize the replica
 func (r *Replica) New(rid int) {
@@ -82,7 +56,17 @@ func (r *Replica) New(rid int) {
 	// if rid is 0, declare self as leader
 	if r.id == 0 {
 		r.isLeader = true
+	} else {
+		r.isLeader = false
 	}
+
+	// set view number to 0
+	r.viewNumber = 0
+
+	// create a branch and assign the root and tail pointers
+	r.branch = new(ds.Branch)
+	r.branch.Root = &ds.Node{ID: r.viewNumber, Cmd: "ROOT", Parent: nil}
+	r.branch.Tail = r.branch.Root
 
 }
 
@@ -95,19 +79,13 @@ func (r *Replica) Start() {
 	// sleep the thread to allow other goroutines to start
 	time.Sleep(time.Second * 5)
 
-	// buffer period to start connnections to the other replicas
+	// buffer period to start rpc connections to the other replicas
 	for !r.startMesh() {
 		time.Sleep(time.Second * 2)
 	}
-
 }
 
-// function to return list of other replicas
-func (r *Replica) ReturnOtherReplicas() []*OtherReplica {
-	return r.replicaList
-}
-
-// function to start server
+// function to start server and register the rpc
 func (r *Replica) startServer() {
 	// listen on ip address and port specified
 	listener, err := net.Listen("tcp", ":"+r.port)
@@ -115,51 +93,16 @@ func (r *Replica) startServer() {
 		panic("Failed to listen on port")
 	}
 
+	// register the replica as an rpc server
+	rpc.Register(r)
+
 	// logging
 	fmt.Printf("Replica %d is listening on %s:%s\n", r.id, r.ipAddr, r.port)
 
+	// accept rpc connections
 	for {
+		rpc.Accept(listener)
 
-		// accept a connection to the server
-		conn, err := listener.Accept()
-		if err != nil {
-			panic("Failed to accept connection")
-		}
-
-		// handle the connection
-		go r.handleConnection(conn)
-
-	}
-}
-
-// function to handle connection
-func (r *Replica) handleConnection(conn net.Conn) {
-	reader := bufio.NewReader(conn)
-
-	// read the id from the connection
-	idStr, err := reader.ReadString('\n')
-	if err != nil {
-		log.Printf("Error reading replica id: %v", err)
-		conn.Close()
-		return
-	}
-
-	// convert string id to interger id
-	idStr = strings.TrimSpace(idStr)
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		log.Printf("Error converting replica id: %v", err)
-		conn.Close()
-		return
-	}
-
-	// store connection with corresponding replica
-	for _, rep := range r.replicaList {
-		if rep.Id == id {
-			rep.Conn = conn
-			fmt.Printf("Connection established with replica %d\n", id)
-			break
-		}
 	}
 }
 
@@ -173,118 +116,20 @@ func (r *Replica) startMesh() bool {
 
 		// continue to the next replica if connection has already been established
 		// and avoid duplicate connections by connecting to higher id replicas
-		if rep.Conn != nil || rep.Id <= r.id {
+		if rep.Client != nil {
 			continue
 		}
 
 		address := rep.IpAddr + ":" + rep.Port
-		conn, err := net.Dial("tcp", address)
+		client, err := rpc.Dial("tcp", address)
 		if err != nil {
 			fmt.Printf("Failed to connect to replica %d\n", rep.Id)
 			allConnected = false
 			continue
 		}
 
-		// send replica id to connected replica
-		_, err = conn.Write([]byte(strconv.Itoa(r.id) + "\n"))
-		if err != nil {
-			fmt.Printf("Failed to send id to replica %d\n", rep.Id)
-			allConnected = false
-			continue
-		}
-
-		rep.Conn = conn
-
-		// handle send and receive
-		go r.handleSend(conn)
-		go r.handleRecv(conn)
+		rep.Client = client
 	}
 
 	return allConnected
-}
-
-// function to handle sending of data
-func (r *Replica) handleSend(conn net.Conn) {}
-
-// function to handle reading of data
-func (r *Replica) handleRecv(conn net.Conn) {}
-
-// function to check if passed node extends from the lockedQC
-func (r *Replica) safetyRule(node *ds.Node) bool {
-
-	// node is in the future
-	if node.ID > r.branch.Tail.ID {
-		var itr *ds.Node
-		itr = node
-
-		for itr.ID > r.branch.Tail.ID {
-			itr = itr.Parent
-		}
-
-		return itr.Cmd == node.Cmd
-	}
-
-	// node is in the past
-	return false
-}
-
-// function to check if liveness rule is satisfied
-func (r *Replica) livenessRule(qview int) bool {
-	return qview > r.lockedQC.ViewNumber
-}
-
-// function to create a message
-func (r *Replica) Msg(mtype int, node ds.Node, qc ds.QuroumCertificate) *ds.Message {
-	msg := new(ds.Message)
-
-	msg.Type = mtype
-	msg.CurView = r.viewNumber
-	msg.Node = node
-	msg.Justify = qc
-
-	return msg
-}
-
-// function to create a message and sign it
-func (r *Replica) VoteMsg(mtype int, node ds.Node, qc ds.QuroumCertificate) *ds.Message {
-	msg := new(ds.Message)
-
-	msg.PartialSig[r.id] = 1
-
-	return msg
-}
-
-// function to create a leaf for the current branch
-func (r *Replica) CreateLeaf(parent *ds.Node, cmd string) *ds.Node {
-	b := new(ds.Node)
-
-	b.ID = r.viewNumber
-	b.Parent = parent
-	b.Cmd = cmd
-
-	return b
-}
-
-// function to create a quorum certificate
-func (r *Replica) QC(msg *ds.Message) *ds.QuroumCertificate {
-	qc := new(ds.QuroumCertificate)
-
-	qc.Type = msg.Type
-	qc.ViewNumber = msg.CurView
-	qc.Node = msg.Node
-	qc.Sig = msg.PartialSig
-
-	return qc
-}
-
-func (r *Replica) MatchingMessage(msg *ds.Message, mtype int, mview int) bool {
-	return (msg.CurView == mview) && (msg.Type == mtype)
-}
-
-func (r *Replica) MatchingQC(qc *ds.QuroumCertificate, qtype int, qview int) bool {
-	return (qc.ViewNumber == qview) && (qc.Type == qtype)
-}
-
-func (r *Replica) SafeNode(node *ds.Node, qc *ds.QuroumCertificate) bool {
-	return r.safetyRule(node) && r.livenessRule(qc.ViewNumber)
 }
