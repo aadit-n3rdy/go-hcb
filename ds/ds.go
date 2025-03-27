@@ -8,9 +8,12 @@ const (
 	DECIDE
 )
 
+// for a replica network of size 4
+const QUROUM_SIZE int = 2
+
 type Node struct {
 	ID     int
-	Cmd    string
+	Cmd    []string
 	Parent *Node
 }
 
@@ -30,6 +33,6 @@ type Message struct {
 	Type       int
 	CurView    int
 	Node       Node
-	Justify    QuroumCertificate
+	Justify    *QuroumCertificate
 	PartialSig []int
 }

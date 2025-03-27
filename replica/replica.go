@@ -65,7 +65,7 @@ func (r *Replica) New(rid int) {
 
 	// create a branch and assign the root and tail pointers
 	r.branch = new(ds.Branch)
-	r.branch.Root = &ds.Node{ID: r.viewNumber, Cmd: "ROOT", Parent: nil}
+	r.branch.Root = &ds.Node{ID: r.viewNumber, Cmd: []string{"START"}, Parent: nil}
 	r.branch.Tail = r.branch.Root
 
 }
@@ -76,6 +76,9 @@ func (r *Replica) Start() {
 	// start listening
 	go r.startServer()
 
+	// start selection of successor
+	go r.handOverLeader()
+
 	// sleep the thread to allow other goroutines to start
 	time.Sleep(time.Second * 5)
 
@@ -83,6 +86,8 @@ func (r *Replica) Start() {
 	for !r.startMesh() {
 		time.Sleep(time.Second * 2)
 	}
+
+	fmt.Println("Mesh Network Established")
 }
 
 // function to start server and register the rpc

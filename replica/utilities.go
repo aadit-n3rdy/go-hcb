@@ -5,21 +5,36 @@ import (
 )
 
 // function to check if passed node extends from the lockedQC
-func (r *Replica) safetyRule(node *ds.Node) bool {
+func (r *Replica) safetyRule(node *ds.Node, qc *ds.QuroumCertificate) bool {
 
-	// node is in the future
-	if node.ID > r.branch.Tail.ID {
-		var itr *ds.Node
-		itr = node
+	flag := false
 
-		for itr.ID > r.branch.Tail.ID {
-			itr = itr.Parent
+	// check if node extends from locked qc
+	itr := r.lockedQC.Node
+
+	for itr.ID < node.ID {
+		if itr.ID == node.ID {
+			flag = flag || r.compareStringArrays(itr.Cmd, node.Cmd)
+			break
 		}
-
-		return itr.Cmd == node.Cmd
+		itr = *itr.Parent
 	}
 
-	// node is in the past
+	return flag
+}
+
+// helper function to compare array of strings
+func (r *Replica) compareStringArrays(a []string, b []string) bool {
+	if len(a) == len(b) {
+		for i := range len(a) {
+			if a[i] != b[i] {
+				return false
+			}
+		}
+
+		return true
+	}
+
 	return false
 }
 
@@ -29,7 +44,7 @@ func (r *Replica) livenessRule(qview int) bool {
 }
 
 // function to create a message
-func (r *Replica) Msg(mtype int, node ds.Node, qc ds.QuroumCertificate) *ds.Message {
+func (r *Replica) Msg(mtype int, node ds.Node, qc *ds.QuroumCertificate) *ds.Message {
 	msg := new(ds.Message)
 
 	msg.Type = mtype
@@ -41,8 +56,8 @@ func (r *Replica) Msg(mtype int, node ds.Node, qc ds.QuroumCertificate) *ds.Mess
 }
 
 // function to create a message and sign it
-func (r *Replica) VoteMsg(mtype int, node ds.Node, qc ds.QuroumCertificate) *ds.Message {
-	msg := new(ds.Message)
+func (r *Replica) VoteMsg(mtype int, node ds.Node, qc *ds.QuroumCertificate) *ds.Message {
+	msg := r.Msg(mtype, node, qc)
 
 	msg.PartialSig[r.id] = 1
 
@@ -50,7 +65,7 @@ func (r *Replica) VoteMsg(mtype int, node ds.Node, qc ds.QuroumCertificate) *ds.
 }
 
 // function to create a leaf for the current branch
-func (r *Replica) CreateLeaf(parent *ds.Node, cmd string) *ds.Node {
+func (r *Replica) CreateLeaf(parent *ds.Node, cmd []string) *ds.Node {
 	b := new(ds.Node)
 
 	b.ID = r.viewNumber
@@ -81,5 +96,5 @@ func (r *Replica) MatchingQC(qc *ds.QuroumCertificate, qtype int, qview int) boo
 }
 
 func (r *Replica) SafeNode(node *ds.Node, qc *ds.QuroumCertificate) bool {
-	return r.safetyRule(node) && r.livenessRule(qc.ViewNumber)
+	return r.safetyRule(node, qc) && r.livenessRule(qc.ViewNumber)
 }

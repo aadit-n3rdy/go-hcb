@@ -2,6 +2,7 @@ package replica
 
 import (
 	"net/rpc"
+	"sync"
 
 	"github.com/aadit-n3rdy/hotCrossBuns/ds"
 )
@@ -20,10 +21,14 @@ type Replica struct {
 
 	replicaList []*OtherReplica
 
+	busy bool
+	lock sync.Mutex
+
 	isLeader   bool
 	leaderID   int
 	successors []int
 
+	cmds       []string
 	viewNumber int
 	lockedQC   ds.QuroumCertificate
 	prepareQC  ds.QuroumCertificate
