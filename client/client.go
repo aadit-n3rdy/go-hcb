@@ -1,49 +1,73 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"math/rand"
 	"net/rpc"
-
-	"github.com/aadit-n3rdy/hotCrossBuns/types"
+	//"github.com/aadit-n3rdy/hotCrossBuns/ds"
 )
 
 type Client struct {
-	srvConns []*rpc.Client
-	config   *Config
+	client *rpc.Client
 }
 
-func (c *Client) Init(conf *Config) {
-	c.config = conf
-	c.srvConns = make([]*rpc.Client, len(conf.NodeAddrs))
-	var err error
-	for i, addr := range c.config.NodeAddrs {
-		c.srvConns[i], err = rpc.Dial("tcp", addr)
-		if err != nil {
-			fmt.Println("Error connecting to ", addr, ":", err)
-		}
+// start the client and connect to the rpc server
+func (c *Client) Start(port string) {
+	client, err := rpc.Dial("tcp", "127.0.0.1:"+port)
+	if err != nil {
+		panic("Error connecting to replica")
+	}
+
+	c.client = client
+}
+
+// function to send command to replica
+func (c *Client) SendCmd(cmd *string) {
+	reply := false
+	err := c.client.Call("Replica.ExecuteCommand", cmd, &reply)
+	if err != nil {
+		fmt.Println("Error sending command to replica: ", err)
 	}
 }
 
-func (c *Client) SendMessage(topic string, msg string) {
-	idxs := rand.Perm(len(c.srvConns))
-	done := 0
-	for _, i := range idxs {
-		sent := false
-		err := c.srvConns[i].Call("Server.Publish", types.NewMessage(topic, msg), &sent)
-		if err != nil {
-			fmt.Println("Error sending:", err)
-		}
-		if err == nil && sent {
-			done += 1
-		}
-		if done > c.config.FaultTolerance {
-			break
-		}
+// function to commit changes
+func (c *Client) Commit() {
+	reply := false
+	err := c.client.Call("Replica.Commit", &reply, &reply)
+	if err != nil {
+		fmt.Println("Error commiting to replica: ", err)
 	}
 }
+
+// function to pull changes
+func (c *Client) Pull() {
+	reply := false
+	err := c.client.Call("Replica.Pull", &reply, &reply)
+	if err != nil {
+		fmt.Println("Error pulling changes: ", err)
 
 func main() {
-	config := Config{}
-	config.Read()
+	// command line flags
+	strPtr := flag.String("port", "8070", "Port number of replica")
+	flag.Parse()
+
+	c := new(Client)
+	c.Start(*strPtr)
+
+	inp := new(string)
+
+	// read input from stdin and execute a client command based on it
+	for {
+		fmt.Scanf("%s", inp)
+
+		switch *inp {
+		case "commit":
+			c.Commit()
+
+		case "pull":
+			c.Pull()
+		default:
+			c.SendCmd(inp)
+		}
+	}
 }
