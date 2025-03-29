@@ -64,8 +64,6 @@ func main() {
 		fmt.Scanf("%s", inp)
 
 		switch *inp {
-		case "stop":
-			break
 		case "commit":
 			c.Commit()
 
@@ -75,4 +73,5 @@ func main() {
 			c.SendCmd(inp)
 		}
 	}
+
 }

@@ -99,6 +99,7 @@ func (r *Replica) BecomeLeader(req *ds.FutureGenerations, rep *bool) error {
 	// declare self as leader
 	r.leaderID = r.id
 	r.isLeader = true
+	r.successors = req.Successors
 
 	// inform other replicas of leader position
 	for _, rep := range r.replicaList {
@@ -178,7 +179,7 @@ func (r *Replica) Pull(req *bool, rep *bool) error {
 // function to commit a node
 func (r *Replica) Commit(req *bool, rep *bool) error {
 	if !r.isLeader {
-		return errors.New("Replica is not a leader")
+		r.Pull(req, req)
 	}
 
 	// lock the thread
