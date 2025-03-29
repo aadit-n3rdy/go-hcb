@@ -45,11 +45,8 @@ func (c *Client) Pull() {
 	err := c.client.Call("Replica.Pull", &reply, &reply)
 	if err != nil {
 		fmt.Println("Error pulling changes: ", err)
-	}
-}
 
 func main() {
-
 	// command line flags
 	strPtr := flag.String("port", "8070", "Port number of replica")
 	flag.Parse()
@@ -73,5 +70,4 @@ func main() {
 			c.SendCmd(inp)
 		}
 	}
-
 }
