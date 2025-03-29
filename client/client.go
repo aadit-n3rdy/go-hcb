@@ -45,6 +45,8 @@ func (c *Client) Pull() {
 	err := c.client.Call("Replica.Pull", &reply, &reply)
 	if err != nil {
 		fmt.Println("Error pulling changes: ", err)
+	}
+}
 
 func main() {
 	// command line flags
